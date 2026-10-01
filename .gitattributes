@@ -1,0 +1,7 @@
+# Normalize line endings so the committed bundles and sources stay LF.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.webp binary
+*.tgz binary

@@ -1,0 +1,19 @@
+# Bundle patch for dsh-mcp-hub.
+#
+# Once the package is listed in the profile's `dsh.profile.bundles`, this insert
+# row mounts the plugin in the loader tree.
+#
+# ── id 命名规则（上个插件踩过坑，这里写死成约定）────────────────────────────
+# Loader entries are addressed by **id**, and the profile patch layer is applied
+# AFTER the bundle layers, so a duplicate id makes the profile row silently
+# replace the bundle row — the plugin then never activates while everything
+# around it keeps working.
+#
+#   this plugin's own bundle id .......... mcp-hub
+#   every row this page generates ........ mcp-hub__<serverName>
+#
+# The `mcp-hub__` namespace makes a collision structurally impossible: a user
+# cannot name a server such that its generated id equals a bundle id.
+- insert:
+    - id: mcp-hub
+      name: dsh-mcp-hub

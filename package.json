@@ -1,0 +1,78 @@
+{
+  "name": "dsh-mcp-hub",
+  "version": "1.0.0",
+  "description": "通用 MCP 服务器管理页（仅官方组件）：在 DSH 设置里增删改任意 MCP 服务（stdio / streamable-http），校验通过后一键写入 profile 的 dsh-mcp-client 注册块，并可探测连通性与工具列表。内置 GitHub 官方 MCP Server 预设。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "author": "tang-coder-hub",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tang-coder-hub/dsh-mcp-hub.git"
+  },
+  "homepage": "https://github.com/tang-coder-hub/dsh-mcp-hub#readme",
+  "bugs": {
+    "url": "https://github.com/tang-coder-hub/dsh-mcp-hub/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "mcp",
+    "model-context-protocol",
+    "mcp-client",
+    "settings-page",
+    "github-mcp"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "verify": "node scripts/verify.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-runtime"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "js-yaml": "^4.1.0",
+    "tsdown": "^0.22.2"
+  }
+}

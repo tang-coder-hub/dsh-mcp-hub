@@ -1,0 +1,42 @@
+# Node
+node_modules/
+*.log
+npm-debug.log*
+.npm/
+
+# Build artefacts (lib/ is committed on purpose: consumers need no toolchain)
+# lib/ — NOT ignored
+
+# Test and coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.nyc_output/
+
+# Type checkers and linters
+.mypy_cache/
+.ruff_cache/
+
+# Local configuration and secrets
+# .env.example is committed; .env never is.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+secrets*.json
+
+# Local scratch and verification output
+.verify/
+scratch/
+*.tmp
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
