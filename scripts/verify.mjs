@@ -552,7 +552,11 @@ if (react === null) {
     console.error = realError
   }
   if (html.length > 0) {
-    check('the page server-renders the catalogue', html.includes('dmhb') && html.includes('连接一个服务') && html.includes('GitHub'), html.slice(0, 220))
+    check(
+      'the page server-renders the catalogue',
+      html.includes('dmhb') && html.includes('连接一个服务') && html.includes('已接入的服务'),
+      html.slice(0, 220),
+    )
   }
 }
 

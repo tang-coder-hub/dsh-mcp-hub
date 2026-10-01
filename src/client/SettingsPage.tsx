@@ -4,6 +4,9 @@
  * Layout is catalogue-first: pick a vendor entry, the credential panel opens
  * with a browser link to the vendor's own token page, save, then apply.
  *
+ * The credential editor is embedded INSIDE each server card — there is exactly
+ * one place to paste a token, next to the server it belongs to.
+ *
  * @module dsh-mcp-hub/src/client/SettingsPage
  */
 
@@ -48,29 +51,28 @@ function Chip({ label, dot, title }: { label: string; dot: 'ok' | 'warn' | 'bad'
   )
 }
 
-/** The credential panel: browser link + one field + save. */
+/**
+ * The credential editor, embedded in each server card.
+ *
+ * Accepts either a bare token (wrapped as `Bearer …`) or a full `Header: value`
+ * line, so pasting straight from a vendor's docs works without the user having
+ * to know which one it is.
+ */
 function CredentialPanel({
   entry,
   onSave,
   onTest,
   busy,
-  testing,
 }: {
   entry: ServerEntry
   onSave: (next: ServerEntry) => void
   onTest: (key: string) => void
   busy: boolean
-  testing: boolean
 }): JSX.Element {
   const [token, setToken] = useState('')
   const hasAuth = Object.keys(entry.headers ?? {}).some((key) => key.toLowerCase() === 'authorization')
-  const catalog = CATALOG.find((item) => item.id === entry.key || item.serverName === entry.serverName)
+  const catalog = CATALOG.find((item) => item.id === entry.serverName)
 
-  /**
-   * Accepts either a bare token or a full `Header: value` line, so pasting
-   * straight from a vendor's docs works without the user having to know which
-   * one it is.
-   */
   const commit = (): void => {
     const text = token.trim()
     if (text.length === 0) return
@@ -78,17 +80,11 @@ function CredentialPanel({
     const headerMatch = /^([A-Za-z0-9_-]+)\s*:\s*(.+)$/.exec(text)
     if (headerMatch !== null && !/^bearer\s/i.test(text)) {
       // A full header line: store it verbatim.
-      onSave({
-        ...entry,
-        headers: { ...(entry.headers ?? {}), [headerMatch[1]]: headerMatch[2].trim() },
-      })
+      onSave({ ...entry, headers: { ...(entry.headers ?? {}), [headerMatch[1]]: headerMatch[2].trim() } })
     } else {
       // A bare credential: wrap it as a bearer token.
       const value = /^bearer\s/i.test(text) ? text : `Bearer ${text}`
-      onSave({
-        ...entry,
-        headers: { ...(entry.headers ?? {}), Authorization: value },
-      })
+      onSave({ ...entry, headers: { ...(entry.headers ?? {}), Authorization: value } })
     }
     setToken('')
   }
@@ -97,17 +93,13 @@ function CredentialPanel({
     <div className="dmhb-form">
       <div className="dmhb-actions">
         {catalog !== undefined && (
-          <button
-            type="button"
-            className="dmhb-btn"
-            disabled={busy}
-            onClick={() => window.open(catalog.tokenUrl, '_blank', 'noopener')}
-          >
+          <button type="button" className="dmhb-btn" disabled={busy}
+            onClick={() => window.open(catalog.tokenUrl, '_blank', 'noopener')}>
             ↗ 打开 {catalog.name} 的凭证页
           </button>
         )}
         {hasAuth ? (
-          <span className="dmhb-hint dmhb-ok">已配置 ✓</span>
+          <span className="dmhb-hint dmhb-ok">已配置凭证 ✓</span>
         ) : (
           <span className="dmhb-hint">还没有配置凭证</span>
         )}
@@ -118,7 +110,7 @@ function CredentialPanel({
           type="text"
           spellCheck={false}
           autoComplete="off"
-          placeholder={catalog !== undefined ? catalog.credentialLabel : '粘贴凭证（如 Bearer <PAT> 或完整请求头）'}
+          placeholder={catalog !== undefined ? catalog.credentialLabel : '粘贴凭证（Bearer <token> 或完整请求头）'}
           value={token}
           onChange={(event) => setToken(event.target.value)}
           onKeyDown={(event) => {
@@ -130,16 +122,121 @@ function CredentialPanel({
         </button>
       </div>
       <span className="dmfb-hint">
-        {catalog !== undefined ? catalog.credentialHelp : '支持粘贴完整请求头（如 Authorization: Bearer xxx），或只贴 token。'}
+        {catalog !== undefined
+          ? catalog.credentialHelp
+          : '支持粘贴完整请求头（如 Authorization: Bearer xxx），或只贴 token。'}
         {'  '}保存后立即生效（写入 profile 需再点「应用到 DSH」）。
       </span>
       <div className="dmhb-actions">
         <button type="button" className="dmhb-btn dmhb-btn-primary" disabled={busy} onClick={() => onTest(entry.key)}>
-          {testing ? '探测中…' : '探测（列出工具）'}
+          探测（列出工具）
         </button>
       </div>
     </div>
   )
+}
+
+/** The expert form: full control over command / args / env / url / headers. */
+function CustomServerForm({ onSave, busy }: { onSave: (entry: ServerEntry) => void; busy: boolean }): JSX.Element {
+  const [draft, setDraft] = useState<ServerEntry>(() => blankDraft())
+  const [open, setOpen] = useState(false)
+  const [showHeaders, setShowHeaders] = useState(false)
+
+  if (!open) {
+    return (
+      <button type="button" className="dmhb-btn" disabled={busy} onClick={() => setOpen(true)}>
+        + 自定义（手动填 URL / 命令 / 环境变量）
+      </button>
+    )
+  }
+
+  return (
+    <div className="dmhb-form">
+      <Row label="显示名">
+        <input className="dmhb-input" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+      </Row>
+      <Row label="服务名">
+        <input className="dmhb-input" style={{ maxWidth: 240 }} value={draft.serverName}
+          placeholder="字母数字下划线连字符"
+          onChange={(event) => setDraft({ ...draft, serverName: event.target.value.replace(/[^A-Za-z0-9_-]/g, '_') })} />
+      </Row>
+      <Row label="传输方式">
+        <select className="dmhb-select" value={draft.transport}
+          onChange={(event) => setDraft({ ...draft, transport: event.target.value as ServerEntry['transport'] })}>
+          <option value="streamable-http">streamable-http（远程，填 URL）</option>
+          <option value="stdio">stdio（本地，填命令）</option>
+        </select>
+      </Row>
+      {draft.transport === 'streamable-http' ? (
+        <Row label="URL">
+          <input className="dmhb-input" value={draft.url} placeholder="https://…"
+            onChange={(event) => setDraft({ ...draft, url: event.target.value })} />
+        </Row>
+      ) : (
+        <>
+          <Row label="命令">
+            <input className="dmhb-input" value={draft.command} onChange={(event) => setDraft({ ...draft, command: event.target.value })} />
+          </Row>
+          <Row label="参数">
+            <input className="dmhb-input" value={draft.args.join(' ')}
+              onChange={(event) => setDraft({ ...draft, args: event.target.value.split(/\s+/).filter((part) => part.length > 0) })} />
+          </Row>
+          <div className="dmhb-row" style={{ alignItems: 'flex-start' }}>
+            <span className="dmhb-label">环境变量</span>
+            <div className="dmhb-control" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+              <textarea className="dmhb-area" value={renderPairText(draft.env)}
+                onChange={(event) => setDraft({ ...draft, env: parsePairText(event.target.value) })} />
+              <span className="dmfb-hint">每行一个 键: 值；值按字符串处理。</span>
+            </div>
+          </div>
+        </>
+      )}
+      {draft.transport === 'streamable-http' && (
+        <div className="dmhb-row" style={{ alignItems: 'flex-start' }}>
+          <span className="dmhb-label">请求头</span>
+          <div className="dmhb-control" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+            {showHeaders ? (
+              <textarea className="dmhb-area" value={renderPairText(draft.headers)}
+                onChange={(event) => setDraft({ ...draft, headers: parsePairText(event.target.value) })} />
+            ) : (
+              <div className="dmhb-actions">
+                <span className="dmhb-hint">已配置 {Object.keys(draft.headers ?? {}).length} 个请求头（隐藏显示）</span>
+                <button type="button" className="dmhb-btn" onClick={() => setShowHeaders(true)}>显示 / 编辑</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      <div className="dmhb-actions">
+        <button type="button" className="dmhb-btn dmhb-btn-primary" disabled={busy}
+          onClick={() => { onSave(draft); setOpen(false); setDraft(blankDraft()) }}>
+          保存
+        </button>
+        <button type="button" className="dmhb-btn" onClick={() => { setOpen(false); setDraft(blankDraft()) }}>
+          取消
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** A blank editing draft. */
+function blankDraft(): ServerEntry {
+  return {
+    key: '',
+    name: '',
+    serverName: '',
+    transport: 'streamable-http',
+    enabled: true,
+    url: '',
+    headers: {},
+    command: '',
+    args: [],
+    env: {},
+    cwd: '',
+    note: '',
+    updatedAt: 0,
+  }
 }
 
 /**
@@ -152,9 +249,10 @@ export function McpServersPage(): JSX.Element {
   const [probe, setProbe] = useState<api.ProbePayload | null>(null)
   const [probeKey, setProbeKey] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [testingKey, setTestingKey] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [editingKey, setEditingKey] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<ServerEntry | null>(null)
   const noticeTimer = useRef<number | null>(null)
 
   const announce = useCallback((text: string): void => {
@@ -201,14 +299,32 @@ export function McpServersPage(): JSX.Element {
 
   /** Connect a catalog entry: store it, then reload. */
   const connect = useCallback(
-    async (item: CatalogEntry, credential: string): Promise<void> => {
+    async (item: CatalogEntry): Promise<void> => {
       setBusy(true)
       try {
-        const payload = await api.upsertServer(entryFromCatalog(item, credential))
+        const payload = await api.upsertServer(entryFromCatalog(item, ''))
         setServers(payload.servers)
         setProblems(payload.problems ?? {})
         setStatus(await api.fetchStatus())
-        announce(`${item.name} 已添加${credential.trim().length > 0 ? '，凭证已填入' : '（未填凭证，先去第②步）'}`)
+        announce(`${item.name} 已添加，请在它的卡片里填入凭证`)
+      } catch (cause) {
+        fail(cause)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [announce, fail],
+  )
+
+  const saveCustom = useCallback(
+    async (entry: ServerEntry): Promise<void> => {
+      setBusy(true)
+      try {
+        const payload = await api.upsertServer(entry)
+        setServers(payload.servers)
+        setProblems(payload.problems ?? {})
+        setStatus(await api.fetchStatus())
+        announce('已保存')
       } catch (cause) {
         fail(cause)
       } finally {
@@ -288,34 +404,17 @@ export function McpServersPage(): JSX.Element {
     [announce, fail],
   )
 
-  /** Save an arbitrary server entry (custom form path). */
-  const saveCustom = useCallback(
-    async (entry: ServerEntry): Promise<void> => {
-      setBusy(true)
-      try {
-        const payload = await api.upsertServer(entry)
-        setServers(payload.servers)
-        setProblems(payload.problems ?? {})
-        setStatus(await api.fetchStatus())
-        announce('已保存')
-      } catch (cause) {
-        fail(cause)
-      } finally {
-        setBusy(false)
-      }
-    },
-    [announce, fail],
-  )
-
-  const connectedCount = servers.filter((item) => Object.keys(item.headers ?? {}).some((key) => key.toLowerCase() === 'authorization')).length
+  const connectedCount = servers.filter((item) =>
+    Object.keys(item.headers ?? {}).some((key) => key.toLowerCase() === 'authorization'),
+  ).length
   const catalogConnected = (catalogId: string): boolean =>
-    servers.some((item) => item.serverName === catalogId || item.key === catalogId)
+    servers.some((item) => item.serverName === catalogId)
 
   return (
     <div className="dmhb">
       <p className="dmfb-intro">
-        把外部 MCP 服务接进 DSH。选一个下面的服务，按提示创建凭证、粘贴进来，然后「应用到 DSH」；
-        重启后工具以 <span className="dmhb-mono">mcp__服务名__工具名</span> 出现。
+        把外部 MCP 服务接进 DSH。点下面的服务卡片添加，按提示在浏览器创建凭证、粘贴回来，
+        然后「应用到 DSH」；重启后工具以 <span className="dmhb-mono">mcp__服务名__工具名</span> 出现。
       </p>
 
       {/* ---------------------------------------------------------- status */}
@@ -340,7 +439,7 @@ export function McpServersPage(): JSX.Element {
       {/* -------------------------------------------------------- catalogue */}
       <section className="dmhb-card">
         <h3>
-          连接一个服务 <span className="dmhb-count">点选 → 创建凭证 → 粘贴回来</span>
+          连接一个服务 <span className="dmhb-count">点卡片 → 创建凭证 → 粘贴回来</span>
         </h3>
         <div className="dmhb-cat">
           {CATALOG.map((item) => {
@@ -350,8 +449,8 @@ export function McpServersPage(): JSX.Element {
                 key={item.id}
                 type="button"
                 className="dmhb-tile"
-                disabled={busy}
-                onClick={() => void connect(item, '')}
+                disabled={busy || isAdded}
+                onClick={() => void connect(item)}
               >
                 <span className="dmhb-tile-head">
                   <span className="dmhb-tile-icon">{item.icon}</span>
@@ -364,31 +463,9 @@ export function McpServersPage(): JSX.Element {
           })}
         </div>
         <span className="dmhb-hint">
-          这些条目指向各厂商**自己发布**的端点，添加后仍可在下面编辑。目录刻意保持很小，只收录厂商文档里明确给出的端点。
+          这些条目指向各厂商自己发布的端点，添加后仍可在下面编辑。
+          目录刻意保持很小，只收录厂商文档里明确给出的端点。
         </span>
-      </section>
-
-      {/* ------------------------------------------------------ apply strip */}
-      <section className="dmhb-card">
-        <h3>应用到 DSH</h3>
-        <div className="dmhb-actions">
-          {status?.block.applied === true ? (
-            <>
-              <button type="button" className="dmhb-btn dmfb-btn-primary" disabled={busy} onClick={() => void applyServers(true)}>
-                重新写入
-              </button>
-              <button type="button" className="dmhb-btn dmhb-btn-danger" disabled={busy} onClick={() => void applyServers(false)}>
-                断开
-              </button>
-            </>
-          ) : (
-            <button type="button" className="dmhb-btn dmhb-btn-primary" disabled={busy || servers.length === 0} onClick={() => void applyServers(true)}>
-              应用到 DSH
-            </button>
-          )}
-          {busy && <span className="dmhb-spin" />}
-          <span className="dmhb-hint">写入后需要重启 DSH 才会生效。</span>
-        </div>
       </section>
 
       {/* ------------------------------------------------------ my servers */}
@@ -401,6 +478,7 @@ export function McpServersPage(): JSX.Element {
           {servers.map((entry) => {
             const issues = problems[entry.key] ?? []
             const isProbed = probeKey === entry.key && probe !== null
+            const isEditing = editingKey === entry.key
             return (
               <div key={entry.key} className={`dmhb-server ${entry.enabled ? 'dmhb-server-on' : 'dmhb-server-off'}`}>
                 <div className="dmhb-server-head">
@@ -414,6 +492,13 @@ export function McpServersPage(): JSX.Element {
                     <Switch label="" checked={entry.enabled} onChange={(next) => void toggle(entry.key, next)} />
                     <button type="button" className="dmhb-btn" disabled={busy} onClick={() => void runProbe(entry.key)}>
                       探测
+                    </button>
+                    <button type="button" className="dmhb-btn" disabled={busy}
+                      onClick={() => {
+                        if (isEditing) { setEditingKey(null); setEditDraft(null) }
+                        else { setEditingKey(entry.key); setEditDraft({ ...entry }) }
+                      }}>
+                      {isEditing ? '收起' : '编辑'}
                     </button>
                     <button type="button" className="dmhb-btn dmhb-btn-danger" disabled={busy} onClick={() => void remove(entry.key)}>
                       删除
@@ -429,7 +514,25 @@ export function McpServersPage(): JSX.Element {
                 {/* The credential editor lives inside the card so there is
                     exactly one place to paste a token, next to the server it
                     belongs to. */}
-                <CredentialPanel entry={entry} onSave={(next) => void saveCustom(next)} onTest={(key) => void runProbe(key)} busy={busy} testing={testingKey === entry.key} />
+                <CredentialPanel entry={entry} onSave={(next) => void saveCustom(next)} onTest={(key) => void runProbe(key)} busy={busy} />
+                {isEditing && editDraft !== null && (
+                  <div className="dmhb-form" style={{ borderTop: '1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.18))', paddingTop: 10 }}>
+                    <Row label="显示名">
+                      <input className="dmhb-input" value={editDraft.name} onChange={(event) => setEditDraft({ ...editDraft, name: event.target.value })} />
+                    </Row>
+                    <Row label="服务名">
+                      <input className="dmhb-input" style={{ maxWidth: 240 }} value={editDraft.serverName}
+                        onChange={(event) => setEditDraft({ ...editDraft, serverName: event.target.value.replace(/[^A-Za-z0-9_-]/g, '_') })} />
+                    </Row>
+                    <div className="dmhb-actions">
+                      <button type="button" className="dmhb-btn dmhb-btn-primary" disabled={busy}
+                        onClick={() => void saveCustom(editDraft).then(() => { setEditingKey(null); setEditDraft(null) })}>
+                        保存修改
+                      </button>
+                      <button type="button" className="dmhb-btn" onClick={() => { setEditingKey(null); setEditDraft(null) }}>取消</button>
+                    </div>
+                  </div>
+                )}
                 {entry.note.length > 0 && <div className="dmhb-hint">{entry.note}</div>}
                 {isProbed && probe !== null && probe.result.ok && (
                   <div className="dmhb-tools">
@@ -450,6 +553,29 @@ export function McpServersPage(): JSX.Element {
         </div>
       </section>
 
+      {/* ------------------------------------------------------ apply strip */}
+      <section className="dmhb-card">
+        <h3>应用到 DSH</h3>
+        <div className="dmhb-actions">
+          {status?.block.applied === true ? (
+            <>
+              <button type="button" className="dmhb-btn dmhb-btn-primary" disabled={busy} onClick={() => void applyServers(true)}>
+                重新写入
+              </button>
+              <button type="button" className="dmhb-btn dmhb-btn-danger" disabled={busy} onClick={() => void applyServers(false)}>
+                断开
+              </button>
+            </>
+          ) : (
+            <button type="button" className="dmhb-btn dmhb-btn-primary" disabled={busy || servers.length === 0} onClick={() => void applyServers(true)}>
+              应用到 DSH
+            </button>
+          )}
+          {busy && <span className="dmhb-spin" />}
+          <span className="dmhb-hint">写入后需要重启 DSH 才会生效。</span>
+        </div>
+      </section>
+
       {/* -------------------------------------------------- custom (expert) */}
       <section className="dmhb-card">
         <h3>
@@ -462,7 +588,9 @@ export function McpServersPage(): JSX.Element {
       <section className="dmhb-card">
         <h3>写入 profile 的内容</h3>
         <div className="dmhb-preview">
-          {servers.length > 0 ? servers.map((entry) => `mcp-hub__${entry.serverName}${entry.enabled ? '' : '（停用）'}`).join('\n') : '（还没有服务）'}
+          {servers.length > 0
+            ? servers.map((entry) => `mcp-hub__${entry.serverName}${entry.enabled ? '' : '（停用）'}`).join('\n')
+            : '（还没有服务）'}
           {'\n'}→ {status?.profile.patchFile ?? '-'}
         </div>
         <span className="dmhb-hint">
@@ -470,86 +598,6 @@ export function McpServersPage(): JSX.Element {
           凭证以明文存在该文件里，请确保权限仅限本机当前用户。
         </span>
       </section>
-    </div>
-  )
-}
-
-/** The expert form: full control over command / args / env / url / headers. */
-function CustomServerForm({ onSave, busy }: { onSave: (entry: ServerEntry) => void; busy: boolean }): JSX.Element {
-  const [draft, setDraft] = useState<ServerEntry>(() => blankDraft())
-  const [open, setOpen] = useState(false)
-  const [showSecret, setShowSecret] = useState(false)
-
-  if (!open) {
-    return (
-      <button type="button" className="dmhb-btn" disabled={busy} onClick={() => setOpen(true)}>
-        + 自定义（手动填 URL / 命令 / 环境变量）
-      </button>
-    )
-  }
-
-  return (
-    <div className="dmhb-form">
-      <Row label="显示名">
-        <input className="dmhb-input" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-      </Row>
-      <Row label="服务名">
-        <input className="dmhb-input" style={{ maxWidth: 240 }} value={draft.serverName}
-          placeholder="字母数字下划线连字符"
-          onChange={(event) => setDraft({ ...draft, serverName: event.target.value.replace(/[^A-Za-z0-9_-]/g, '_') })} />
-      </Row>
-      <Row label="传输方式">
-        <select className="dmhb-select" value={draft.transport}
-          onChange={(event) => setDraft({ ...draft, transport: event.target.value as ServerEntry['transport'] })}>
-          <option value="streamable-http">streamable-http</option>
-          <option value="stdio">stdio</option>
-        </select>
-      </Row>
-      {draft.transport === 'streamable-http' ? (
-        <Row label="URL">
-          <input className="dmhb-input" value={draft.url} placeholder="https://…" onChange={(event) => setDraft({ ...draft, url: event.target.value })} />
-        </Row>
-      ) : (
-        <>
-          <Row label="命令">
-            <input className="dmhb-input" value={draft.command} onChange={(event) => setDraft({ ...draft, command: event.target.value })} />
-          </Row>
-          <Row label="参数">
-            <input className="dmhb-input" value={draft.args.join(' ')}
-              onChange={(event) => setDraft({ ...draft, args: event.target.value.split(/\s+/).filter((part) => part.length > 0) })} />
-          </Row>
-          <div className="dmhb-row" style={{ alignItems: 'flex-start' }}>
-            <span className="dmhb-label">环境变量</span>
-            <div className="dmhb-control" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-              <textarea className="dmhb-area" value={renderPairText(draft.env)} onChange={(event) => setDraft({ ...draft, env: parsePairText(event.target.value) })} />
-              <span className="dmfb-hint">每行一个 键: 值；值按字符串处理。</span>
-            </div>
-          </div>
-        </>
-      )}
-      {draft.transport === 'streamable-http' && (
-        <div className="dmhb-row" style={{ alignItems: 'flex-start' }}>
-          <span className="dmhb-label">请求头</span>
-          <div className="dmhb-control" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-            {showSecret ? (
-              <textarea className="dmhb-area" value={renderPairText(draft.headers)} onChange={(event) => setDraft({ ...draft, headers: parsePairText(event.target.value) })} />
-            ) : (
-              <div className="dmhb-actions">
-                <span className="dmhb-hint">已配置 {Object.keys(draft.headers ?? {}).length} 个请求头（隐藏显示）</span>
-                <button type="button" className="dmhb-btn" onClick={() => setShowSecret(true)}>显示 / 编辑</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-      <div className="dmhb-actions">
-        <button type="button" className="dmhb-btn dmhb-btn-primary" disabled={busy} onClick={() => { onSave(draft); setOpen(false); setDraft(blankDraft()) }}>
-          保存
-        </button>
-        <button type="button" className="dmhb-btn" onClick={() => { setOpen(false); setDraft(blankDraft()) }}>
-          取消
-        </button>
-      </div>
     </div>
   )
 }
